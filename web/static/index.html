@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pdf-redact-web</title>
+<link rel="stylesheet" href="/static/style.css?v=5">
+</head>
+<body>
+<header>
+  <div class="brand">▮ pdf-<b>redact</b>-web</div>
+  <div id="docInfo" class="docinfo"></div>
+  <div class="spacer"></div>
+  <button id="newBtn" class="newbtn" title="upload another PDF">＋ New file</button>
+  <div class="zoom">
+    <button id="zoomOut" title="zoom out">−</button>
+    <span id="zoomLabel">100%</span>
+    <button id="zoomIn" title="zoom in">+</button>
+  </div>
+  <button id="exportBtn" class="primary" disabled>Export redacted PDF</button>
+</header>
+
+<main>
+  <aside id="sidebar">
+    <section id="uploadCard" class="card">
+      <h2>1 · Upload PDF</h2>
+      <div id="dropzone">drop PDF here<br><span>or click to select</span>
+        <input type="file" id="fileInput" accept="application/pdf" hidden>
+      </div>
+    </section>
+
+    <section id="detectCard" class="card" hidden>
+      <h2>2 · AI detection</h2>
+      <div class="row"><span id="detectState" class="chip">…</span></div>
+      <div class="progress"><div id="progBar"></div></div>
+      <div id="cats" class="cats"></div>
+      <div class="stats" id="boxStats"></div>
+      <button id="redetectBtn" class="ghost">↻ re-run detection</button>
+    </section>
+
+    <section id="helpCard" class="card help" hidden>
+      <h2>3 · Review</h2>
+      <ul>
+        <li><i class="sw ai-on"></i> filled = will be <b>redacted</b> — click to keep visible</li>
+        <li><i class="sw ai-off"></i> dashed = kept — click to redact again</li>
+        <li><i class="sw custom"></i> blue = your rectangle — click its <b>×</b> (or double-click) to remove</li>
+        <li><b>drag</b> anywhere to draw your own box — as many as you like, also overlapping</li>
+      </ul>
+      <p class="fine">Export burns boxes into an image-only PDF — no text layer, irreversible.</p>
+    </section>
+
+    <section id="usageCard" class="card" hidden>
+      <h2>API usage (this job)</h2>
+      <div id="usageOut" class="usage">–</div>
+    </section>
+
+    <section id="auditCard" class="card" hidden>
+      <h2>Leak audit (after export)</h2>
+      <div id="auditOut"></div>
+    </section>
+  </aside>
+
+  <div id="viewer"></div>
+</main>
+
+<div id="toast" hidden></div>
+<script src="/static/app.js?v=5"></script>
+</body>
+</html>

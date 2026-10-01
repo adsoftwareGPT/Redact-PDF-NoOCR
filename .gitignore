@@ -1,0 +1,15 @@
+# runtime data — real documents, never commit
+web/jobs/
+web/server.log
+engine/test_output/
+
+# secrets
+.env
+*.key
+
+# python
+__pycache__/
+*.pyc
+
+# backups
+*.bak*
