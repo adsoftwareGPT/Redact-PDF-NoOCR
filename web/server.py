@@ -131,10 +131,11 @@ def detect(jid: str):
         base = usage_snapshot()
         try:
             doc = pymupdf.open(job["src"])
-            # pymupdf documents are NOT thread-safe: render every page image
-            # sequentially BEFORE the worker pool starts (also reused by the
-            # referee pass below)
-            page_imgs = [render_page(doc[p], DPI) for p in range(len(doc))]
+            # pymupdf documents are NOT thread-safe: render page images
+            # sequentially in THIS thread, submitting each page to the detection
+            # pool as soon as it is rasterized (rendering pipelines with
+            # detection instead of blocking it)
+            page_imgs = []
 
             def one(p):
                 img = page_imgs[p]
@@ -147,16 +148,26 @@ def detect(jid: str):
                     if all(_iou(b["bbox_2d"], k["bbox_2d"]) < 0.55 for k in kept):
                         kept.append(b)
                 kept = P.drop_official(kept)   # deterministic guard: officials stay visible
-                kept = P.classify_spans(page_imgs[p], kept, DEFAULT_MODEL, key)
                 for i, b in enumerate(kept):
                     b.update(id=f"p{p+1}-{i}", page=p + 1, enabled=True)
+                # FAST PATH: publish boxes right after detection so the UI
+                # draws them immediately (user sees progress at detection speed)
                 job["boxes"][p + 1] = kept
                 job["pages_done"] += 1
                 save_job(job)
+                # POLICY REFEREE (background): strikes company/official spans;
+                # the UI picks up the update on its next status poll
+                final = P.classify_spans(page_imgs[p], kept, DEFAULT_MODEL, key)
+                if len(final) != len(kept):
+                    job["boxes"][p + 1] = final
+                    save_job(job)
 
-            doc.close()  # pages already rasterized; no concurrent doc access
-            with ThreadPoolExecutor(max_workers=4) as ex:
-                futs = [ex.submit(one, p) for p in range(len(page_imgs))]
+            with ThreadPoolExecutor(max_workers=6) as ex:
+                futs = []
+                for p in range(len(doc)):
+                    page_imgs.append(render_page(doc[p], DPI))
+                    futs.append(ex.submit(one, p))
+                doc.close()  # all pages rasterized; no concurrent doc access
                 for f in futs:
                     f.result()
             job["state"] = "detected"

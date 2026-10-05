@@ -318,92 +318,31 @@ def _verdict_one_safe(img, b, model, key):
         return "redact"
 
 
-def classify_spans(img, boxes, model, key, quiet=True, workers=6):
+# only these category families are policy-ambiguous -> referee call needed.
+# dob / ID / phone / email spans are virtually never institutional, so they are
+# skipped for speed (fail-closed: they stay redacted).
+_REFEREE_CATS = ("name", "person", "signature", "adresse", "address", "straße",
+                 "strasse", "bank", "iban", "konto", "account", "other")
+
+
+def _needs_referee(b):
+    cat = str(b.get("category", "")).lower()
+    return any(k in cat for k in _REFEREE_CATS)
+
+
+def classify_spans(img, boxes, model, key, quiet=True, workers=10):
     """Context-aware referee: strikes company/official spans over-marked by the
-    detector. Each candidate is judged on its own crop (surrounding text gives
-    the role/company context). Fail-closed: unparseable -> redact."""
+    detector. Each AMBIGUOUS candidate is judged on its own crop (surrounding
+    text gives the role/company context). Fail-closed: unparseable -> redact."""
     if not boxes:
         return boxes
+    amb = [b for b in boxes if _needs_referee(b)]
+    if not amb:
+        return boxes
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        verdicts = list(ex.map(lambda b: _verdict_one_safe(img, b, model, key), boxes))
-    keep = [b for b, v in zip(boxes, verdicts) if v == "redact"]
+    with ThreadPoolExecutor(max_workers=min(workers, len(amb))) as ex:
+        verdicts = dict(zip(map(id, amb), ex.map(lambda b: _verdict_one_safe(img, b, model, key), amb)))
+    keep = [b for b in boxes if id(b) not in verdicts or verdicts[id(b)] == "redact"]
     if not quiet:
         print(f"    referee: {len(boxes) - len(keep)}/{len(boxes)} span(s) stay visible", flush=True)
     return keep
-
-
-# ── deterministic guard: official persons are never redacted ──────────────
-# High-precision German role words — a detection box whose text contains one
-# is a notary / court / company functionary and is ALWAYS kept visible
-# (policy: only PRIVATE natural persons get redacted).
-import re as _re
-OFFICIAL_ROLE_RE = _re.compile(
-    r"(?i)\b(notariat|notarassessor(in)?|notar(in)?v?e?r?t?r?e?t?e?r?(in)?|notar(in)?|"
-    r"rechtspfleger(in)?|urkundsbeamte[rn]|richter(in)?|amtsrichter(in)?|"
-    r"prokurist(in)?|objektmanager(in)?|kundenberater(in)?|sachbearbeiter(in)?|"
-    r"geschaeftsfuehrer(in)?|geschäftsführer(in)?)\b"
-    r"|\bi\.\s?[AV]\b")
-
-
-STAFF_DIAL_RE = _re.compile(r"(?i)durchwahl|direktwahl|extension|dw[-:]?\s*\d|[-\u2013]\s?\d{3}\s?\)")
-
-
-def _inside(b, big, frac=0.9):
-    """Is box b at least `frac` contained in box `big`? (normalized coords)"""
-    x1, y1, x2, y2 = b["bbox_2d"]; X1, Y1, X2, Y2 = big["bbox_2d"]
-    iw = max(0, min(x2, X2) - max(x1, X1)); ih = max(0, min(y2, Y2) - max(y1, Y1))
-    area = (x2 - x1) * (y2 - y1)
-    return area > 0 and (iw * ih) / area >= frac
-
-
-def drop_official(boxes):
-    """Remove boxes that cover official-person spans (notaries, court and
-    company functionaries, staff named with a business direct dial). Tight
-    boxes fully inside a dropped span inherit the verdict. Fail-safe for the
-    keep-direction only: a drop never removes evidence of a PRIVATE person,
-    because drops require an explicit business/official cue."""
-    fixed = []
-    for b in boxes:
-        t = str(b.get("text", "")).replace("Ã¼", "ü").replace("Ã¶", "ö").replace("Ã¤", "ä")
-        if OFFICIAL_ROLE_RE.search(t) or STAFF_DIAL_RE.search(t):
-            continue
-        fixed.append(b)
-    # inheritance: sub-boxes inside dropped boxes share the official context
-    dropped = [b for b in boxes if b not in fixed]
-    return [b for b in fixed if not any(_inside(b, d) for d in dropped)]
-
-
-# ── policy referee: context-aware keep/redact verdict per candidate span ───
-def classify_spans(img, boxes, model, key, quiet=True):
-    """One extra LLM call with the FULL page as context: strikes company /
-    official-person spans the detector over-marked. Fail-closed: on any error
-    or unparseable answer all boxes stay on the redaction list."""
-    if not boxes:
-        return boxes
-
-    def _fix(t):  # repair mojibake so the model reads clean German
-        return (str(t).replace("Ã¼", "ü").replace("Ã¶", "ö").replace("Ã¤", "ä")
-                .replace("ÃŸ", "ß").replace("Ã", "Ü").replace("Ã", "Ö")
-                .replace("Ã", "Ä"))
-
-    listing = "\n".join(f"{i+1} · {b.get('category','?')} · {_fix(b.get('text','')).strip()[:120]}"
-                        for i, b in enumerate(boxes))
-    prompt = prompts.CLASSIFY_PROMPT.replace("{spans}", listing)
-    try:
-        b64, mime = _img_b64(img)
-        raw = llm.call_vision_model(b64, prompt, model, key, mime=mime)
-        verdicts = llm.extract_json(raw)
-        if not isinstance(verdicts, dict):
-            raise ValueError("verdict map is not an object")
-        keep_idx = set()
-        for k, v in verdicts.items():
-            if str(k).strip().isdigit() and str(v).strip().lower() == "keep":
-                keep_idx.add(int(k))
-        if not quiet:
-            print(f"    referee: {len(keep_idx)}/{len(boxes)} span(s) stay visible", flush=True)
-        return [b for i, b in enumerate(boxes) if i + 1 not in keep_idx]
-    except Exception as e:
-        if not quiet:
-            print(f"  classify pass failed ({type(e).__name__}) -> keeping all boxes", flush=True)
-        return boxes
