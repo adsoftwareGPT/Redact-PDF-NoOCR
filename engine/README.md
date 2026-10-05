@@ -1,8 +1,10 @@
 # no-ocr-redaction
 
-Redacts personal data of **natural persons** in scanned PDF documents —
-**purely LLM-based, no OCR anywhere in the pipeline**. Company names and
-company contact data stay visible.
+Redacts personal data of **PRIVATE natural persons** in scanned PDF documents —
+**purely LLM-based, no OCR anywhere in the pipeline**. Company data stays visible,
+as do **official persons** in their function (notaries, court staff, employees of
+companies/courts/authorities acting in a business role). See the root README for
+the full policy.
 
 ## How it works
 
@@ -25,9 +27,13 @@ scanned PDF ──rasterize──▶ page image ──▶ ① vision LLM detecti
 API calls use JPEG transport and SSE streaming. An 11-page scanned protocol
 processes in ≈3 min detection + ≈0.5 min verification (was ≈12 min sequential).
 
-* **Detection** — Qwen3-VL (via OpenRouter) returns tight bounding boxes + a
-  category per personal-data span (name, address, dob, phone, email, bank,
-  id_number, signature).
+* **Detection** — any OpenAI-compatible vision endpoint (default: Qwen3-VL via
+  OpenRouter) returns tight bounding boxes + a category per personal-data span
+  (name, address, dob, phone, email, bank, id_number, signature).
+* **Policy guards + referee** — deterministic German role-word/direct-dial guards
+  and a per-span context-crop LLM verdict ("private person or company/official
+  span?") keep companies and official persons visible. Guards fail closed:
+  errors leave boxes ON (over-redaction, never a silent leak).
 * **Deep pass** — the page is additionally analysed as two overlapping crops;
   boxes from all passes are **unioned** (a shifted duplicate is better than a gap).
 * **Verification** — a second LLM call renders the *final blackened page* and
@@ -46,10 +52,16 @@ the model *looks* at the pixels, exactly like a human reviewer.
 pip install -r requirements.txt      # pymupdf, Pillow, requests
 ```
 
-API key discovery (first hit wins):
-1. `OPENROUTER_KEY` environment variable
-2. `C:\agent_linux\.env` (or `/mnt/c/agent_linux/.env` under WSL)
-3. `./.env` in the project folder
+Endpoint & key configuration (env vars win over the project-root `.env`,
+see `.env.example` in the repository root):
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `REDACT_API_URL` | OpenAI-compatible chat-completions endpoint | OpenRouter |
+| `REDACT_MODEL` | model id at that endpoint | `qwen/qwen3-vl-235b-a22b-instruct` |
+| `REDACT_API_KEY` (or `OPENROUTER_KEY`, `QWEN_KEY`, `OPENAI_API_KEY`) | API key | — |
+
+To use your own Qwen server: `REDACT_API_URL=http://host:port/v1/chat/completions`.
 
 ## Usage
 

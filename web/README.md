@@ -1,14 +1,17 @@
 # pdf-redact-web
 
 Browser UI for reviewing AI redactions before burning them — inspired by redact-pdf.ai.
-Reuses the proven `no-ocr-redaction` engine (Qwen3-VL via OpenRouter, no OCR).
+Reuses the `engine/` redaction package (vision LLM, no OCR). Policy: private
+persons get redacted; company data and official persons (notaries, court/company
+staff) stay visible.
 
 ## Start
 ```bash
-cd ~/../mnt/c/Users/Uwe.Heinig/Desktop/pdf-redact-web   # or the Windows path
-python3 server.py            # → http://localhost:8799
+cd <project root>
+python3 web/server.py        # → http://localhost:8799
 ```
-Open http://localhost:8799 in your Windows browser (WSL localhost forwarding).
+Port via `REDACT_PORT`, exports via `REDACT_OUT_DIR` (default `<project>/redacted`),
+model endpoint via `REDACT_API_URL`/`REDACT_MODEL` — see `.env.example`.
 
 ## Workflow
 1. **Upload** a PDF (drop zone) → pages rasterized at 150 dpi
@@ -21,7 +24,7 @@ Open http://localhost:8799 in your Windows browser (WSL localhost forwarding).
      overlapping allowed; remove via click on its **×** or double-click
    - category chip = toggle whole category on/off
 4. **Export redacted PDF** → burns ONLY kept boxes + custom rectangles into an
-   image-only PDF (0 extractable chars, irreversible), saved to `Desktop\redacted\`,
+   image-only PDF (0 extractable chars, irreversible), saved to the configured output directory,
    then runs an LLM leak audit on the burned pages; findings shown in sidebar
    (fix by drawing a box and re-exporting — no re-detection cost)
 
@@ -30,5 +33,5 @@ Open http://localhost:8799 in your Windows browser (WSL localhost forwarding).
 - Custom rectangles are persisted server-side too (`POST /api/custom/<id>`) —
   they survive page reloads and server restarts
 - Detection ≈ 10 s/page · export+audit ≈ 5 s/page (Qwen3-VL, few cents/page)
-- API key auto-loaded from `C:\agent_linux\.env` (`OPENROUTER_KEY`)
+- API key/endpoint from `.env` or env vars (`REDACT_API_URL`, `REDACT_MODEL`, `REDACT_API_KEY`)
 - REST API under `/docs` (FastAPI swagger)

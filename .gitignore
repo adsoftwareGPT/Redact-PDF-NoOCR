@@ -1,15 +1,9 @@
-# runtime data — real documents, never commit
+# runtime data — never commit real documents
 web/jobs/
 web/server.log
-engine/test_output/
-
-# secrets
-.env
-*.key
-
-# python
-__pycache__/
+redacted/
+**/__pycache__/
 *.pyc
-
-# backups
+.env
 *.bak*
+engine/test_output/

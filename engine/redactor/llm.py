@@ -65,9 +65,10 @@ def call_vision_model(image_b64: str, prompt: str, model: str, api_key: str,
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/adsoftware/no-ocr-redaction",
-        "X-Title": "no-ocr-redaction",
     }
+    if "openrouter.ai" in API_URL:  # attribution headers, OpenRouter only
+        headers["HTTP-Referer"] = "https://github.com/adsoftwareGPT/Redact-PDF-NoOCR"
+        headers["X-Title"] = "Redact-PDF-NoOCR"
     last_err = None
     for attempt in range(1, ATTEMPTS + 1):
         try:

@@ -10,6 +10,7 @@ optional LLM leak audit of the burned result.
 Run:  python3 web/server.py   (http://localhost:8799)
 """
 import io
+import os
 import sys
 import threading
 import time
@@ -35,9 +36,11 @@ from redactor.pdfops import render_page, norm_to_px, pad_box, burn, rebuild_pdf
 from redactor import verify as V
 
 DPI = 150
-PORT = 8799
+PORT = int(os.environ.get("REDACT_PORT", "8799"))
 JOBS_DIR = BASE / "jobs"; JOBS_DIR.mkdir(exist_ok=True)
-OUT_DIR = Path("/mnt/c/Users/Uwe.Heinig/Desktop/redacted"); OUT_DIR.mkdir(exist_ok=True)
+# redacted exports: REDACT_OUT_DIR env var, default <project>/redacted
+OUT_DIR = Path(os.environ.get("REDACT_OUT_DIR") or (BASE.parent / "redacted"))
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 JOBS: dict = {}
 
 app = FastAPI(title="pdf-redact-web")
@@ -128,9 +131,13 @@ def detect(jid: str):
         base = usage_snapshot()
         try:
             doc = pymupdf.open(job["src"])
+            # pymupdf documents are NOT thread-safe: render every page image
+            # sequentially BEFORE the worker pool starts (also reused by the
+            # referee pass below)
+            page_imgs = [render_page(doc[p], DPI) for p in range(len(doc))]
 
             def one(p):
-                img = render_page(doc[p], DPI)
+                img = page_imgs[p]
                 raw = P._detect(img, DEFAULT_MODEL, key)
                 raw += P._detect_deep(img, DEFAULT_MODEL, key)
                 raw = [P._widen_numeric(b) for b in raw]
@@ -139,17 +146,19 @@ def detect(jid: str):
                 for b in raw:  # drop near-duplicates (full-page vs deep pass)
                     if all(_iou(b["bbox_2d"], k["bbox_2d"]) < 0.55 for k in kept):
                         kept.append(b)
+                kept = P.drop_official(kept)   # deterministic guard: officials stay visible
+                kept = P.classify_spans(page_imgs[p], kept, DEFAULT_MODEL, key)
                 for i, b in enumerate(kept):
                     b.update(id=f"p{p+1}-{i}", page=p + 1, enabled=True)
                 job["boxes"][p + 1] = kept
                 job["pages_done"] += 1
                 save_job(job)
 
+            doc.close()  # pages already rasterized; no concurrent doc access
             with ThreadPoolExecutor(max_workers=4) as ex:
-                futs = [ex.submit(one, p) for p in range(len(doc))]
+                futs = [ex.submit(one, p) for p in range(len(page_imgs))]
                 for f in futs:
                     f.result()
-            doc.close()
             job["state"] = "detected"
             job["usage_detect"] = usage_diff(usage_snapshot(), base)
             save_job(job)
