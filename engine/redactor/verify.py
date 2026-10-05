@@ -31,11 +31,11 @@ FORM_WORDS = {"eigentum", "eigentümer", "verwalter", "vertreter", "vollmacht",
 AUDIT_PROMPT = """Transcription audit of one REDACTED scanned page of a document (personal data was covered with solid black boxes). Read the ENTIRE page including tables, lists and margins.
 
 Report everything below that is still READABLE and NOT covered by a black box:
-- person names or surnames (even single surnames in tables, letterheads, footers)
-- handwritten signatures or person initials (name-like pen marks)
-- personal email addresses, private phone numbers, IBANs
+- names or surnames of PRIVATE persons (even single surnames in tables, letterheads, footers)
+- handwritten signatures or person initials (name-like pen marks) of private persons
+- personal email addresses, private phone numbers, IBANs of private individuals
 
-Do NOT report: company names, addresses, printed column headers / form labels (Eigentum, Eigentümer, Verwalter, HGV ...), handwritten form words (Eigentum/Eigentümer/Verwalter as representation notes), X marks in checkboxes, or the black boxes.
+Do NOT report (EXEMPT by policy): ALL company data (names, addresses, contact data, register numbers); OFFICIAL PERSONS acting in their official/business capacity — notaries (Notar/Notarin) and notary staff, judges and court employees (Richterin, Rechtspfleger ...), employees of companies/courts/authorities named with a function label or in the letterhead/signature block (incl. their titles and handwritten signatures); printed column headers / form labels (Eigentum, Eigentümer, Verwalter, HGV ...), handwritten form words (Eigentum/Eigentümer/Verwalter as representation notes), X marks in checkboxes, or the black boxes.
 
 Return STRICT JSON only:
 {"leaks": [{"bbox_2d": [x1,y1,x2,y2], "kind": "name|signature|email|phone|bank", "text": "<readable span>"}]}
